@@ -1,7 +1,10 @@
 # from object_detection.core import losses
 
-#TODO @JJ add custom loss per
+#TODO @JJ add custom loss per -- Done!
 # https://github.com/tensorflow/models/issues/7817#issuecomment-558387760
+
+## model zoo
+## https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/tf2_detection_zoo.md
 
 """
 1) add your new loss to losses.py
@@ -31,7 +34,7 @@ from object_detection.utils import label_map_util
 from object_detection.utils import config_util
 from object_detection.utils import visualization_utils as viz_utils
 from object_detection.builders import model_builder
-from object_detection.core import losses
+from object_detection.core import post_processing
 
 def load_image_into_numpy_array(path):
   """Load an image from file into a numpy array.
@@ -58,7 +61,8 @@ def plot_detections(image_np,
                     scores,
                     category_index,
                     figsize=(12, 16),
-                    image_name=None):
+                    image_name=None,
+                    score_thresh=0.5):
   """Wrapper function to visualize detections.
 
   Args:
@@ -82,7 +86,7 @@ def plot_detections(image_np,
       scores,
       category_index,
       use_normalized_coordinates=True,
-      min_score_thresh=0.5)
+      min_score_thresh=score_thresh)
   if image_name:
     plt.imsave(image_name, image_np_with_annotations)
   else:
@@ -96,21 +100,19 @@ for i in range(1, 6):
   image_path = os.path.join(train_image_dir, 'robertducky' + str(i) + '.jpg')
   train_images_np.append(load_image_into_numpy_array(image_path))
 
-plt.rcParams['axes.grid'] = False
-plt.rcParams['xtick.labelsize'] = False
-plt.rcParams['ytick.labelsize'] = False
-plt.rcParams['xtick.top'] = False
-plt.rcParams['xtick.bottom'] = False
-plt.rcParams['ytick.left'] = False
-plt.rcParams['ytick.right'] = False
-plt.rcParams['figure.figsize'] = [14, 7]
-
-for idx, train_image_np in enumerate(train_images_np):
-  plt.subplot(2, 3, idx+1)
-  plt.imshow(train_image_np)
-plt.show()
-
-from effdet import EfficientDet
+# plt.rcParams['axes.grid'] = False
+# plt.rcParams['xtick.labelsize'] = False
+# plt.rcParams['ytick.labelsize'] = False
+# plt.rcParams['xtick.top'] = False
+# plt.rcParams['xtick.bottom'] = False
+# plt.rcParams['ytick.left'] = False
+# plt.rcParams['ytick.right'] = False
+# plt.rcParams['figure.figsize'] = [14, 7]
+#
+# for idx, train_image_np in enumerate(train_images_np):
+#   plt.subplot(2, 3, idx+1)
+#   plt.imshow(train_image_np)
+# plt.show()
 
 ## TF requires (top, left, bottom, right) = [ymin, xmin, ymax, xmax] format
 gt_boxes = [
@@ -147,17 +149,17 @@ for (train_image_np, gt_box_np) in zip(train_images_np, gt_boxes):
 print('Done prepping data.')
 
 
-dummy_scores = np.array([1.0], dtype=np.float32)  # give boxes a score of 100%
-
-plt.figure(figsize=(30, 15))
-for idx in range(5):
-  plt.subplot(2, 3, idx+1)
-  plot_detections(
-      train_images_np[idx],
-      gt_boxes[idx],
-      np.ones(shape=[gt_boxes[idx].shape[0]], dtype=np.int32),
-      dummy_scores, category_index)
-plt.show()
+# dummy_scores = np.array([1.0], dtype=np.float32)  # give boxes a score of 100%
+#
+# plt.figure(figsize=(30, 15))
+# for idx in range(5):
+#   plt.subplot(2, 3, idx+1)
+#   plot_detections(
+#       train_images_np[idx],
+#       gt_boxes[idx],
+#       np.ones(shape=[gt_boxes[idx].shape[0]], dtype=np.int32),
+#       dummy_scores, category_index)
+# plt.show()
 
 print('Building model and restoring weights for fine-tuning...', flush=True)
 num_classes = 1
@@ -165,7 +167,10 @@ num_classes = 1
 DATA_DIR = os.path.join(os.getcwd(), 'data')
 MODELS_DIR = os.path.join(DATA_DIR, 'models')
 # MODEL_NAME = 'efficientdet_d3_coco17_tpu-32'
-MODEL_NAME = 'ssd_resnet50_v1_fpn_640x640_coco17_tpu-8'
+# MODEL_NAME = 'ssd_resnet50_v1_fpn_640x640_coco17_tpu-8'
+# MODEL_NAME = 'efficientdet_d1_coco17_tpu-32'
+# MODEL_NAME = 'efficientdet_d0_coco17_tpu-32'
+MODEL_NAME = 'ssd_mobilenet_v1_fpn_640x640_coco17_tpu-8'
 # MODEL_TAR_FILENAME = MODEL_NAME + '.tar.gz'
 
 pipeline_config = os.path.join(MODELS_DIR, os.path.join(MODEL_NAME, 'pipeline.config'))
@@ -182,6 +187,10 @@ model_config.ssd.num_classes = num_classes
 model_config.ssd.freeze_batchnorm = True
 model_config.ssd.loss.localization_loss.weighted_iou.iou_type = 1
 # model_config.ssd.loss.localization_loss.weighted_smooth_l1.delta = 1.0
+
+model_config.ssd.post_processing.batch_non_max_suppression.soft_nms_sigma = 0.5
+model_config.ssd.feature_extractor.conv_hyperparams.batch_norm.decay = 0.9
+
 detection_model = model_builder.build(model_config=model_config, is_training=True)
 
 # Set up object-based checkpoint restore --- RetinaNet has two prediction
@@ -272,14 +281,16 @@ def get_model_train_step_function(model, optimizer, vars_to_fine_tune):
         groundtruth_boxes_list=groundtruth_boxes_list,
         groundtruth_classes_list=groundtruth_classes_list)
     with tf.GradientTape() as tape:
-      preprocessed_images = tf.concat(
-          [detection_model.preprocess(image_tensor)[0]
-           for image_tensor in image_tensors], axis=0)
+      # preprocessed_images = tf.concat(
+      #     [detection_model.preprocess(image_tensor)[0]
+      #      for image_tensor in image_tensors], axis=0)
+      preprocessed_images = tf.squeeze(detection_model.preprocess(tf.convert_to_tensor(image_tensors))[0])
       prediction_dict = model.predict(preprocessed_images, shapes)
       losses_dict = model.loss(prediction_dict, shapes)
       total_loss = losses_dict['Loss/localization_loss'] + losses_dict['Loss/classification_loss']
       gradients = tape.gradient(total_loss, vars_to_fine_tune)
       optimizer.apply_gradients(zip(gradients, vars_to_fine_tune))
+
     return total_loss
 
   return train_step_fn
@@ -355,7 +366,8 @@ for i in range(len(test_images_np)):
       detections['detection_classes'][0].numpy().astype(np.uint32)
       + label_id_offset,
       detections['detection_scores'][0].numpy(),
-      category_index, figsize=(15, 20), image_name="gif_frame_" + ('%02d' % i) + ".jpg")
+      category_index, figsize=(15, 20), image_name="gif_frame_" + ('%02d' % i) + ".jpg",
+      score_thresh=0.5)
 
 
 imageio.plugins.freeimage.download()
