@@ -79,13 +79,13 @@ cap = cv2.VideoCapture(0)
 
 #######################################################
 
-
+label_id_offset = 1
 while True:
     # Read frame from camera
     ret, image_np = cap.read()
     image_np = image_np[:, int(image_np.shape[1] / 2):, :]
     # Expand dimensions since the model expects images to have shape: [1, None, None, 3]
-    image_np_expanded = np.expand_dims(image_np, axis=0)
+    # image_np_expanded = np.expand_dims(image_np, axis=0)
 
     # Things to try:
     # Flip horizontally
@@ -98,7 +98,6 @@ while True:
     input_tensor = tf.convert_to_tensor(np.expand_dims(image_np, 0), dtype=tf.float32)
     detections, predictions_dict, shapes = detect_fn(input_tensor)
 
-    label_id_offset = 1
     image_np_with_detections = image_np.copy()
 
     viz_utils.visualize_boxes_and_labels_on_image_array(
@@ -114,6 +113,8 @@ while True:
 
     # Display output
     plt.clf();plt.imshow(cv2.resize(image_np_with_detections, (800, 600)))
+    plt.clf();plt.imshow(image_np_with_detections)
+
 
     # if cv2.waitKey(25) & 0xFF == ord('q'):
     #     break

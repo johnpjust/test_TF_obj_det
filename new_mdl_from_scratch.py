@@ -1,18 +1,5 @@
-# from object_detection.core import losses
-
-#TODO @JJ add custom loss per -- Done!
-# https://github.com/tensorflow/models/issues/7817#issuecomment-558387760
-
 ## model zoo
 ## https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/tf2_detection_zoo.md
-
-"""
-1) add your new loss to losses.py
-2) add its config field to losses.proto so it can be parsed by config parser.
-3) link the config field you added with the new loss you added, in loss_builder.
-Finally, use your new loss in your config file after rebuilding the library and reinstalling.
-
-"""
 
 import matplotlib.pyplot as plt
 
@@ -199,17 +186,6 @@ detection_model = model_builder.build(model_config=model_config, is_training=Tru
 # from scratch (we show the omission below by commenting out the line that
 # we would add if we wanted to restore both heads)
 
-# fake_box_predictor = tf.compat.v2.train.Checkpoint(
-#     _base_tower_layers_for_heads=detection_model._box_predictor._base_tower_layers_for_heads,
-#     # _prediction_heads=detection_model._box_predictor._prediction_heads,
-#     #    (i.e., the classification head that we *will not* restore)
-#     _box_prediction_head=detection_model._box_predictor._box_prediction_head,
-#     )
-# fake_model = tf.compat.v2.train.Checkpoint(
-#           _feature_extractor=detection_model._feature_extractor,
-#           _box_predictor=fake_box_predictor)
-# ckpt = tf.compat.v2.train.Checkpoint(model=fake_model)
-
 fake_box_predictor = tf.train.Checkpoint(
     _base_tower_layers_for_heads=detection_model._box_predictor._base_tower_layers_for_heads,
     # _prediction_heads=detection_model._box_predictor._prediction_heads,
@@ -276,6 +252,30 @@ def get_model_train_step_function(model, optimizer, vars_to_fine_tune):
     Returns:
       A scalar tensor representing the total loss for the input batch.
     """
+
+    ''' ------------- the plan ---------------
+    1) Pre-augmentations (prior to sampleing "GT" crop)
+    Pre-augmentations include the following: mosaic, blend (maybe skip mosaic for now)
+
+    2) Sample "GT" images & calculate bounding boxes
+    Multiple crop "GT" boxes per image probably OK.
+
+    3) Crop and full image augmentations.
+    --not sure we actually need to augment the cropped images...--
+    Both images augmentations:
+    random color distortion (brightness, hue, contrast, saturation)
+    random patch Gaussian
+    posterize
+    random jpeg quality
+
+    Full Image Augmentations:
+    Random black patches
+    
+    
+    
+    '''
+
+
     shapes = tf.constant(batch_size * [[640, 640, 3]], dtype=tf.int32)
     model.provide_groundtruth(
         groundtruth_boxes_list=groundtruth_boxes_list,
